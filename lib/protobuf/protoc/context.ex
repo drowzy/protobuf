@@ -5,7 +5,9 @@ defmodule Protobuf.Protoc.Context do
 
   # Plugins passed by options
   defstruct plugins: [],
-
+            files: [],
+            imports: [],
+            output_path: "",
             ### All files scope
 
             # Mapping from file name to (mapping from type name to metadata, like elixir type name)
