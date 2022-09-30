@@ -38,7 +38,7 @@ defmodule Mix.Tasks.Protobuf.Generate do
   use Mix.Task
   alias Protobuf.Protoc.Context
 
-  @options [
+  @switches [
     output_path: :string,
     include_path: :keep,
     generate_descriptors: :boolean,
@@ -52,9 +52,15 @@ defmodule Mix.Tasks.Protobuf.Generate do
   @impl Mix.Task
   @spec run(any) :: any
   def run(args) do
-    {opts, files, []} = OptionParser.parse(args, strict: @options)
+    {opts, files} = OptionParser.parse!(args, strict: @switches)
     {plugins, opts} = pop_values(opts, :plugins)
     {imports, opts} = pop_values(opts, :include_path)
+
+    transform_module =
+      case Keyword.fetch(opts, :transform_module) do
+        {:ok, t} -> Module.concat([t])
+        :error -> nil
+      end
 
     output_path =
       opts
@@ -67,8 +73,9 @@ defmodule Mix.Tasks.Protobuf.Generate do
       output_path: output_path,
       gen_descriptors?: Keyword.get(opts, :generate_descriptors, false),
       plugins: plugins,
-      transform_module: Keyword.get(opts, :transform_module),
-      include_docs?: Keyword.get(opts, :transform_module, false)
+      transform_module: transform_module,
+      package_prefix: Keyword.get(opts, :package_prefix),
+      include_docs?: Keyword.get(opts, :include_docs, false)
     }
 
     Protobuf.load_extensions()
@@ -142,27 +149,17 @@ defmodule Mix.Tasks.Protobuf.Generate do
     File.write!(path, content)
   end
 
-  def protoc(%Context{files: [proto_file], imports: []}) do
-    run_protoc([proto_file], ["-I", "#{proto_file |> Path.dirname() |> Path.expand()}"])
-  end
+  defp protoc(%Context{files: [proto_file], imports: []}),
+    do: run_protoc([proto_file], ["-I", "#{proto_file |> Path.dirname() |> Path.expand()}"])
 
-  def protoc(%Context{files: [proto_file], imports: paths}) do
-    run_protoc([proto_file], paths_to_protoc_args(paths))
-  end
+  defp protoc(%Context{files: [proto_file], imports: paths}),
+    do: run_protoc([proto_file], paths_to_protoc_args(paths))
 
-  def protoc(%Context{files: proto_files, imports: []}) do
-    run_protoc(proto_files, ["-I", "#{common_directory_path(proto_files)}"])
-  end
+  defp protoc(%Context{files: proto_files, imports: []}),
+    do: run_protoc(proto_files, ["-I", "#{common_directory_path(proto_files)}"])
 
-  def protoc(%Context{files: proto_files, imports: paths}) do
-    run_protoc(proto_files, paths_to_protoc_args(paths))
-  end
-
-  # -- Private
-
-  defp paths_to_protoc_args(paths) do
-    paths |> Enum.map(&["-I", &1]) |> Enum.concat()
-  end
+  defp protoc(%Context{files: proto_files, imports: paths}),
+    do: run_protoc(proto_files, paths_to_protoc_args(paths))
 
   defp run_protoc(proto_files, args) do
     outfile_name = "protobuf_#{random_string()}"
@@ -170,8 +167,6 @@ defmodule Mix.Tasks.Protobuf.Generate do
 
     cmd_args =
       ["--include_imports", "--include_source_info", "-o", outfile_path] ++ args ++ proto_files
-
-    # cmd_args = ["-o", outfile_path] ++ args ++ proto_files
 
     try do
       System.cmd("protoc", cmd_args, stderr_to_stdout: true)
@@ -188,6 +183,12 @@ defmodule Mix.Tasks.Protobuf.Generate do
       {msg, _} ->
         {:error, msg}
     end
+  end
+
+  defp paths_to_protoc_args(paths) do
+    paths
+    |> Enum.map(&["-I", &1])
+    |> Enum.concat()
   end
 
   defp common_directory_path(paths_rel) do
