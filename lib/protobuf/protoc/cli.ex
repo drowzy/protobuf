@@ -49,7 +49,7 @@ defmodule Protobuf.Protoc.CLI do
     ctx =
       %Context{}
       |> parse_params(request.parameter || "")
-      |> find_types(request.proto_file, request.file_to_generate)
+      |> Context.find_types(request.proto_file, request.file_to_generate)
 
     files =
       Enum.flat_map(request.file_to_generate, fn file ->
@@ -131,80 +131,6 @@ defmodule Protobuf.Protoc.CLI do
 
   defp parse_param(_unknown, ctx) do
     ctx
-  end
-
-  # Made public for testing.
-  @doc false
-  @spec find_types(Context.t(), [Google.Protobuf.FileDescriptorProto.t()], [String.t()]) ::
-          Context.t()
-  def find_types(%Context{} = ctx, descs, files_to_generate)
-      when is_list(descs) and is_list(files_to_generate) do
-    global_type_mapping =
-      Map.new(descs, fn %Google.Protobuf.FileDescriptorProto{name: filename} = desc ->
-        {filename, find_types_in_proto(ctx, desc, files_to_generate)}
-      end)
-
-    %Context{ctx | global_type_mapping: global_type_mapping}
-  end
-
-  defp find_types_in_proto(
-         %Context{} = ctx,
-         %Google.Protobuf.FileDescriptorProto{} = desc,
-         files_to_generate
-       ) do
-    # Only take package_prefix into consideration for files that we're directly generating.
-    package_prefix =
-      if desc.name in files_to_generate do
-        ctx.package_prefix
-      else
-        nil
-      end
-
-    ctx =
-      %Protobuf.Protoc.Context{
-        namespace: [],
-        package_prefix: package_prefix,
-        package: desc.package
-      }
-      |> Protobuf.Protoc.Context.custom_file_options_from_file_desc(desc)
-
-    find_types_in_descriptor(_types = %{}, ctx, desc.message_type ++ desc.enum_type)
-  end
-
-  defp find_types_in_descriptor(types_acc, ctx, descs) when is_list(descs) do
-    Enum.reduce(descs, types_acc, &find_types_in_descriptor(_acc = &2, ctx, _desc = &1))
-  end
-
-  defp find_types_in_descriptor(
-         types_acc,
-         ctx,
-         %Google.Protobuf.DescriptorProto{name: name} = desc
-       ) do
-    new_ctx = update_in(ctx.namespace, &(&1 ++ [name]))
-
-    types_acc
-    |> update_types(ctx, name)
-    |> find_types_in_descriptor(new_ctx, desc.enum_type)
-    |> find_types_in_descriptor(new_ctx, desc.nested_type)
-  end
-
-  defp find_types_in_descriptor(
-         types_acc,
-         ctx,
-         %Google.Protobuf.EnumDescriptorProto{name: name}
-       ) do
-    update_types(types_acc, ctx, name)
-  end
-
-  defp update_types(types, %Context{namespace: ns, package: pkg} = ctx, name) do
-    type_name = Protobuf.Protoc.Generator.Util.mod_name(ctx, ns ++ [name])
-
-    mapping_name =
-      ([pkg] ++ ns ++ [name])
-      |> Enum.reject(&is_nil/1)
-      |> Enum.join(".")
-
-    Map.put(types, "." <> mapping_name, %{type_name: type_name})
   end
 
   if Version.match?(System.version(), "~> 1.13") do

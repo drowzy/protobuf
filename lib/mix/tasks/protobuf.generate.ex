@@ -124,7 +124,7 @@ defmodule Mix.Tasks.Protobuf.Generate do
   end
 
   defp generate(ctx, request) do
-    ctx = Protobuf.Protoc.CLI.find_types(ctx, request.proto_file, request.file_to_generate)
+    ctx = Context.find_types(ctx, request.proto_file, request.file_to_generate)
 
     files =
       Enum.flat_map(request.file_to_generate, fn file ->
@@ -149,6 +149,7 @@ defmodule Mix.Tasks.Protobuf.Generate do
     File.write!(path, content)
   end
 
+  # https://github.com/ahamez/protox/blob/master/lib/protox/protoc.ex
   defp protoc(%Context{files: [proto_file], imports: []}),
     do: run_protoc([proto_file], ["-I", "#{proto_file |> Path.dirname() |> Path.expand()}"])
 
